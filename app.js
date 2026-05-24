@@ -200,8 +200,7 @@ function calcFu(winType) {
   const menzenRonFu = winType === "ron" && style.id === "menzen" ? 10 : 0;
   const tsumoFu = winType === "tsumo" ? 2 : 0;
   const rawFu = 20 + meldFu + headFu + waitFu + menzenRonFu + tsumoFu;
-  const fu = Math.max(20, roundFu(rawFu));
-  return winType === "ron" && style.id === "open" && fu === 20 ? 30 : fu;
+  return Math.max(20, roundFu(rawFu));
 }
 
 function getLimit(fu, han) {
