@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0d315d">
+    <title>麻雀 アガリ牌表示</title>
+    <link rel="stylesheet" href="agari.css?v=17">
+  </head>
+  <body>
+    <main class="wait-app">
+      <header class="wait-top">
+        <div>
+          <h1>麻雀 アガリ牌表示</h1>
+          <p>手牌を13枚入力すると、待ち牌を自動表示</p>
+        </div>
+        <div class="top-actions">
+          <a href="index.html">得点計算へ</a>
+          <button type="button" id="resetButton">リセット</button>
+        </div>
+      </header>
+
+      <section class="settings">
+        <label>
+          場風
+          <select id="roundWind"></select>
+        </label>
+        <label>
+          自風
+          <select id="seatWind"></select>
+        </label>
+        <label>
+          本場
+          <select id="honba"></select>
+        </label>
+      </section>
+
+      <section class="workspace">
+        <div class="main-column">
+          <section class="panel">
+            <div class="section-head">
+              <h2>手牌</h2>
+              <span id="handCount">0 / 13</span>
+            </div>
+            <div class="hand-row" id="handSlots"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head">
+              <h2>牌候補</h2>
+              <span id="modeHint">牌を押すと手牌に入ります</span>
+            </div>
+            <div class="tile-candidates" id="tileCandidates"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head">
+              <h2>待ち</h2>
+              <span id="waitStatus">13枚になるよう入力</span>
+            </div>
+            <div class="wait-row" id="waitTiles"></div>
+          </section>
+        </div>
+
+        <aside class="side-column">
+          <section class="panel">
+            <h2>操作</h2>
+            <div class="mode-grid" id="modeButtons"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head">
+              <h2>ドラ</h2>
+              <span id="doraCount">0枚</span>
+            </div>
+            <div class="dora-box" id="doraBox">未選択</div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head">
+              <h2>副露</h2>
+              <span id="meldCount">0 / 4</span>
+            </div>
+            <div class="meld-area" id="meldArea"></div>
+          </section>
+        </aside>
+      </section>
+
+      <section class="panel result-panel">
+        <div class="section-head result-headline">
+          <h2>アガリ結果</h2>
+          <div class="result-controls">
+            <div class="win-toggle" id="winTypeButtons"></div>
+            <div class="situation-buttons" id="situationButtons"></div>
+            <div class="han-adjust" id="hanAdjustButtons" aria-label="追加翻の調整"></div>
+          </div>
+        </div>
+        <div id="agariResult" class="agari-empty">待ち牌を選ぶと、手役・符・得点を表示します</div>
+      </section>
+    </main>
+
+    <script src="agari.js?v=17"></script>
+  </body>
+</html>

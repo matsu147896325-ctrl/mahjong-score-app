@@ -1,9 +1,12 @@
-const CACHE_NAME = "mahjong-score-v3";
+const CACHE_NAME = "mahjong-score-v22";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css?v=10",
   "./app.js?v=10",
+  "./agari.html",
+  "./agari.css?v=17",
+  "./agari.js?v=17",
   "./manifest.webmanifest",
   "./icon.svg",
 ];
