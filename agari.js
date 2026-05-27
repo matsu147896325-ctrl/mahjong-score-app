@@ -64,6 +64,7 @@ const state = {
   melds: [],
   winningTile: null,
   improvementTile: null,
+  pendingChi: null,
   winType: "ron",
   hanAdjustment: 0,
   situation: {
@@ -292,6 +293,10 @@ function clearImprovementGuide() {
   state.improvementTile = null;
 }
 
+function clearPendingChi() {
+  state.pendingChi = null;
+}
+
 function addTileToHand(id) {
   const counts = usedCounts();
   if (counts[canonicalId(id)] >= 4) return;
@@ -300,6 +305,7 @@ function addTileToHand(id) {
     state.hand[state.selectedSlot] = id;
     state.winningTile = null;
     clearImprovementGuide();
+    clearPendingChi();
     sortHand();
     return;
   }
@@ -309,6 +315,7 @@ function addTileToHand(id) {
     state.hand[firstEmpty] = id;
     state.winningTile = null;
     clearImprovementGuide();
+    clearPendingChi();
     sortHand();
   }
 }
@@ -320,7 +327,40 @@ function removeTilesFromHand(tileIds) {
   });
   state.winningTile = null;
   clearImprovementGuide();
+  clearPendingChi();
   sortHand();
+}
+
+function possibleChiChoices(id) {
+  const baseId = canonicalId(id);
+  const tile = ruleTile(id);
+  if (tile.suit === "honor") return [];
+  const suitStart = Math.floor(baseId / 9) * 9;
+  const suitEnd = suitStart + 8;
+  const handCounts = countsFromHand();
+  return [baseId - 2, baseId - 1, baseId].flatMap((start) => {
+    if (start < suitStart || start + 2 > suitEnd) return [];
+    const needed = [start, start + 1, start + 2].filter((tileId) => tileId !== baseId);
+    const hasNeeded = needed.every((tileId) => handCounts[tileId] > 0)
+      && (needed[0] !== needed[1] || handCounts[needed[0]] > 1);
+    if (!hasNeeded) return [];
+    const tiles = [start, start + 1, start + 2].map((tileId) => (tileId === baseId ? id : tileId));
+    return [{
+      called: id,
+      tiles,
+      handTilesToRemove: tiles.filter((tileId) => canonicalId(tileId) !== baseId),
+    }];
+  });
+}
+
+function applyChiChoice(choice) {
+  state.melds.push({ type: "chi", label: "チー", tiles: choice.tiles });
+  state.winningTile = null;
+  clearImprovementGuide();
+  const removeTiles = choice.handTilesToRemove;
+  clearPendingChi();
+  removeTilesFromHand(removeTiles);
+  state.mode = "hand";
 }
 
 function makeMeld(mode, id) {
@@ -331,21 +371,14 @@ function makeMeld(mode, id) {
   let label = "";
   const baseId = canonicalId(id);
   if (mode === "chi") {
-    const tile = ruleTile(id);
-    if (tile.suit === "honor") return;
-    const suitStart = Math.floor(baseId / 9) * 9;
-    const suitEnd = suitStart + 8;
-    const handCounts = countsFromHand();
-    const sequenceStart = [baseId - 2, baseId - 1, baseId].find((start) => {
-      if (start < suitStart || start + 2 > suitEnd) return false;
-      const needed = [start, start + 1, start + 2].filter((tileId) => tileId !== baseId);
-      return needed.every((tileId) => handCounts[tileId] > 0)
-        && (needed[0] !== needed[1] || handCounts[needed[0]] > 1);
-    });
-    if (sequenceStart === undefined) return;
-    meldTiles = [sequenceStart, sequenceStart + 1, sequenceStart + 2].map((tileId) => (tileId === baseId ? id : tileId));
-    handTilesToRemove = meldTiles.filter((tileId) => canonicalId(tileId) !== baseId);
-    label = "チー";
+    const choices = possibleChiChoices(id);
+    if (choices.length === 0) return;
+    if (choices.length > 1) {
+      state.pendingChi = { called: id, choices };
+      return;
+    }
+    applyChiChoice(choices[0]);
+    return;
   } else if (mode === "pon") {
     meldTiles = [id, baseId, baseId];
     handTilesToRemove = [baseId, baseId];
@@ -361,12 +394,14 @@ function makeMeld(mode, id) {
     pon.label = "加カン";
     pon.tiles.push(id);
     removeTilesFromHand([baseId]);
+    clearPendingChi();
     state.mode = "hand";
     return;
   }
   state.melds.push({ type: mode, label, tiles: meldTiles });
   state.winningTile = null;
   clearImprovementGuide();
+  clearPendingChi();
   removeTilesFromHand(handTilesToRemove);
   state.mode = "hand";
 }
@@ -375,6 +410,7 @@ function onCandidateClick(id) {
   recordedChange(() => {
     if (state.mode === "dora") {
       state.dora.push(id);
+      clearPendingChi();
       state.mode = "hand";
     } else if (state.mode === "hand") {
       addTileToHand(id);
@@ -534,6 +570,7 @@ function applyImprovementDiscard(index) {
   state.hand[index] = state.improvementTile;
   state.winningTile = null;
   clearImprovementGuide();
+  clearPendingChi();
   sortHand();
 }
 
@@ -887,6 +924,7 @@ function renderHand() {
           state.hand[index] = null;
           state.winningTile = null;
           clearImprovementGuide();
+          clearPendingChi();
           sortHand();
         });
         return;
@@ -901,6 +939,7 @@ function renderHand() {
 }
 
 function renderCandidates() {
+  renderChiChoices();
   const container = document.getElementById("tileCandidates");
   container.innerHTML = "";
   const counts = usedCounts();
@@ -917,6 +956,35 @@ function renderCandidates() {
   });
 }
 
+function renderChiChoices() {
+  const box = document.getElementById("chiChoices");
+  box.innerHTML = "";
+  if (!state.pendingChi || state.pendingChi.choices.length <= 1) {
+    box.className = "chi-choices";
+    return;
+  }
+  box.className = "chi-choices active";
+  const title = document.createElement("div");
+  title.className = "chi-choice-title";
+  title.textContent = `${tileById(state.pendingChi.called).label}をどの形でチーしますか`;
+  box.appendChild(title);
+
+  const buttons = document.createElement("div");
+  buttons.className = "chi-choice-buttons";
+  state.pendingChi.choices.forEach((choice, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "chi-choice-button";
+    button.setAttribute("aria-label", `${choice.tiles.map((tileId) => tileById(tileId).label).join("")}でチー`);
+    button.innerHTML = choice.tiles.map((tileId) => renderTile(tileId)).join("");
+    button.addEventListener("click", () => {
+      recordedChange(() => applyChiChoice(state.pendingChi.choices[index]));
+    });
+    buttons.appendChild(button);
+  });
+  box.appendChild(buttons);
+}
+
 function renderModes() {
   const container = document.getElementById("modeButtons");
   container.innerHTML = "";
@@ -928,6 +996,7 @@ function renderModes() {
     button.addEventListener("click", () => {
       state.mode = mode.id;
       state.selectedSlot = null;
+      clearPendingChi();
       render();
     });
     container.appendChild(button);
@@ -947,6 +1016,7 @@ function renderModes() {
   doraModeButton.onclick = () => {
     state.mode = "dora";
     state.selectedSlot = null;
+    clearPendingChi();
     render();
   };
 }
@@ -1211,6 +1281,7 @@ function init() {
       state.melds = [];
       state.winningTile = null;
       state.improvementTile = null;
+      state.pendingChi = null;
       state.winType = "ron";
       state.hanAdjustment = 0;
       Object.keys(state.situation).forEach((key) => {

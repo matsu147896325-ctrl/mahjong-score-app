@@ -169,6 +169,55 @@ h1 {
   align-items: start;
 }
 
+.candidate-main {
+  min-width: 0;
+}
+
+.chi-choices {
+  display: none;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 2px solid #f0b429;
+  border-radius: 8px;
+  background: #fff8dd;
+}
+
+.chi-choices.active {
+  display: block;
+}
+
+.chi-choice-title {
+  margin-bottom: 8px;
+  color: #7a4a00;
+  font-weight: 900;
+}
+
+.chi-choice-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.chi-choice-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 2px solid #d99a13;
+  border-radius: 8px;
+  background: #fff;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.chi-choice-button:hover {
+  background: #fff0bd;
+}
+
+.chi-choice-button .tile {
+  width: 34px;
+  height: 48px;
+}
+
 .compact-status {
   display: grid;
   gap: 10px;
