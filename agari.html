@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#0d315d">
     <title>麻雀 アガリ牌表示</title>
-    <link rel="stylesheet" href="agari.css?v=17">
+    <link rel="stylesheet" href="agari.css?v=20">
   </head>
   <body>
     <main class="wait-app">
@@ -13,10 +13,6 @@
         <div>
           <h1>麻雀 アガリ牌表示</h1>
           <p>手牌を13枚入力すると、待ち牌を自動表示</p>
-        </div>
-        <div class="top-actions">
-          <a href="index.html">得点計算へ</a>
-          <button type="button" id="resetButton">リセット</button>
         </div>
       </header>
 
@@ -35,55 +31,60 @@
         </label>
       </section>
 
-      <section class="workspace">
-        <div class="main-column">
-          <section class="panel">
+      <section class="panel hand-panel">
+        <div class="hand-panel-grid">
+          <div>
             <div class="section-head">
               <h2>手牌</h2>
               <span id="handCount">0 / 13</span>
             </div>
             <div class="hand-row" id="handSlots"></div>
-          </section>
-
-          <section class="panel">
-            <div class="section-head">
-              <h2>牌候補</h2>
-              <span id="modeHint">牌を押すと手牌に入ります</span>
-            </div>
-            <div class="tile-candidates" id="tileCandidates"></div>
-          </section>
-
-          <section class="panel">
-            <div class="section-head">
-              <h2>待ち</h2>
-              <span id="waitStatus">13枚になるよう入力</span>
-            </div>
-            <div class="wait-row" id="waitTiles"></div>
-          </section>
-        </div>
-
-        <aside class="side-column">
-          <section class="panel">
-            <h2>操作</h2>
+          </div>
+          <div class="hand-tools">
             <div class="mode-grid" id="modeButtons"></div>
-          </section>
+          </div>
+        </div>
+      </section>
 
-          <section class="panel">
-            <div class="section-head">
-              <h2>ドラ</h2>
-              <span id="doraCount">0枚</span>
-            </div>
-            <div class="dora-box" id="doraBox">未選択</div>
-          </section>
+      <section class="panel candidate-panel">
+        <div class="section-head">
+          <h2>牌候補</h2>
+          <div class="candidate-head-controls">
+            <span id="modeHint">牌を押すと手牌に入ります</span>
+            <button type="button" id="undoButton">前に戻る</button>
+            <button type="button" id="resetButton">リセット</button>
+          </div>
+        </div>
+        <div class="candidate-layout">
+          <div class="tile-candidates" id="tileCandidates"></div>
+          <div class="compact-status">
+            <section class="status-box">
+              <div class="section-head">
+                <h2>ドラ</h2>
+                <div class="dora-tools">
+                  <button type="button" id="doraModeButton">ドラ追加</button>
+                  <span id="doraCount">0枚</span>
+                </div>
+              </div>
+              <div class="dora-box" id="doraBox">未選択</div>
+            </section>
+            <section class="status-box">
+              <div class="section-head">
+                <h2>副露</h2>
+                <span id="meldCount">0 / 4</span>
+              </div>
+              <div class="meld-area" id="meldArea"></div>
+            </section>
+          </div>
+        </div>
+      </section>
 
-          <section class="panel">
-            <div class="section-head">
-              <h2>副露</h2>
-              <span id="meldCount">0 / 4</span>
-            </div>
-            <div class="meld-area" id="meldArea"></div>
-          </section>
-        </aside>
+      <section class="panel">
+        <div class="section-head">
+          <h2>待ち</h2>
+          <span id="waitStatus">13枚になるよう入力</span>
+        </div>
+        <div class="wait-row" id="waitTiles"></div>
       </section>
 
       <section class="panel result-panel">
@@ -99,6 +100,6 @@
       </section>
     </main>
 
-    <script src="agari.js?v=17"></script>
+    <script src="agari.js?v=20"></script>
   </body>
 </html>

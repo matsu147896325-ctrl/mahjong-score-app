@@ -29,11 +29,11 @@ const candidateTiles = [
 
 const modes = [
   { id: "hand", label: "手牌" },
-  { id: "dora", label: "ドラ" },
-  { id: "chi", label: "チー" },
-  { id: "pon", label: "ポン" },
   { id: "ankan", label: "暗カン" },
+  { id: "chi", label: "チー" },
   { id: "minkan", label: "明カン" },
+  { id: "pon", label: "ポン" },
+  { id: "kakan", label: "加カン" },
 ];
 
 const winds = [
@@ -77,6 +77,39 @@ const state = {
     chankan: false,
   },
 };
+
+const history = [];
+
+function captureSnapshot() {
+  return {
+    state: JSON.parse(JSON.stringify(state)),
+    roundWind: document.getElementById("roundWind")?.value ?? "east",
+    seatWind: document.getElementById("seatWind")?.value ?? "east",
+    honba: document.getElementById("honba")?.value ?? "0",
+  };
+}
+
+function restoreSnapshot(snapshot) {
+  Object.assign(state, JSON.parse(JSON.stringify(snapshot.state)));
+  document.getElementById("roundWind").value = snapshot.roundWind;
+  document.getElementById("seatWind").value = snapshot.seatWind;
+  document.getElementById("honba").value = snapshot.honba;
+}
+
+function recordedChange(change) {
+  const before = captureSnapshot();
+  change();
+  const after = captureSnapshot();
+  if (JSON.stringify(before) !== JSON.stringify(after)) history.push(before);
+  render();
+}
+
+function undoLastAction() {
+  const previous = history.pop();
+  if (!previous) return;
+  restoreSnapshot(previous);
+  render();
+}
 
 function tileById(id) {
   return id >= 34 ? redTiles[id - 34] : tiles[id];
@@ -291,47 +324,64 @@ function removeTilesFromHand(tileIds) {
 }
 
 function makeMeld(mode, id) {
-  if (state.melds.length >= 4) return;
+  if (mode !== "kakan" && state.melds.length >= 4) return;
   if (tileById(id).red && hasRedTile(id)) return;
   let meldTiles = [];
+  let handTilesToRemove = [];
   let label = "";
   const baseId = canonicalId(id);
   if (mode === "chi") {
     const tile = ruleTile(id);
-    if (tile.suit === "honor" || tile.rank > 7) return;
-    meldTiles = [id, baseId + 1, baseId + 2];
+    if (tile.suit === "honor") return;
+    const suitStart = Math.floor(baseId / 9) * 9;
+    const suitEnd = suitStart + 8;
+    const handCounts = countsFromHand();
+    const sequenceStart = [baseId - 2, baseId - 1, baseId].find((start) => {
+      if (start < suitStart || start + 2 > suitEnd) return false;
+      const needed = [start, start + 1, start + 2].filter((tileId) => tileId !== baseId);
+      return needed.every((tileId) => handCounts[tileId] > 0)
+        && (needed[0] !== needed[1] || handCounts[needed[0]] > 1);
+    });
+    if (sequenceStart === undefined) return;
+    meldTiles = [sequenceStart, sequenceStart + 1, sequenceStart + 2].map((tileId) => (tileId === baseId ? id : tileId));
+    handTilesToRemove = meldTiles.filter((tileId) => canonicalId(tileId) !== baseId);
     label = "チー";
   } else if (mode === "pon") {
     meldTiles = [id, baseId, baseId];
+    handTilesToRemove = [baseId, baseId];
     label = "ポン";
   } else if (mode === "ankan" || mode === "minkan") {
     meldTiles = [id, baseId, baseId, baseId];
+    handTilesToRemove = mode === "minkan" ? [baseId, baseId, baseId] : [baseId, baseId, baseId, baseId];
     label = mode === "ankan" ? "暗カン" : "明カン";
-  }
-  const counts = usedCounts();
-  const needed = meldTiles.reduce((map, tileId) => {
-    const canonical = canonicalId(tileId);
-    return map.set(canonical, (map.get(canonical) || 0) + 1);
-  }, new Map());
-  for (const [tileId, amount] of needed) {
-    if (counts[tileId] + amount > 4) return;
+  } else if (mode === "kakan") {
+    const pon = state.melds.find((meld) => meld.type === "pon" && canonicalId(meld.tiles[0]) === baseId);
+    if (!pon) return;
+    pon.type = "minkan";
+    pon.label = "加カン";
+    pon.tiles.push(id);
+    removeTilesFromHand([baseId]);
+    state.mode = "hand";
+    return;
   }
   state.melds.push({ type: mode, label, tiles: meldTiles });
   state.winningTile = null;
   clearImprovementGuide();
-  removeTilesFromHand(meldTiles);
+  removeTilesFromHand(handTilesToRemove);
   state.mode = "hand";
 }
 
 function onCandidateClick(id) {
-  if (state.mode === "dora") {
-    state.dora.push(id);
-  } else if (state.mode === "hand") {
-    addTileToHand(id);
-  } else {
-    makeMeld(state.mode, id);
-  }
-  render();
+  recordedChange(() => {
+    if (state.mode === "dora") {
+      state.dora.push(id);
+      state.mode = "hand";
+    } else if (state.mode === "hand") {
+      addTileToHand(id);
+    } else {
+      makeMeld(state.mode, id);
+    }
+  });
 }
 
 function countsFromHand() {
@@ -441,23 +491,46 @@ function tenpaiImprovingTiles() {
     .map((tile) => tile.id);
 }
 
-function discardIndicesForImprovement(improvementTile) {
-  if (improvementTile === null) return [];
+function withHypotheticalHand(hand, action) {
+  const originalHand = state.hand;
+  state.hand = hand;
+  try {
+    return action();
+  } finally {
+    state.hand = originalHand;
+  }
+}
+
+function discardGuideForImprovement(improvementTile) {
+  const guide = new Map();
+  if (improvementTile === null) return guide;
   const afterDraw = countsFromHand();
   afterDraw[canonicalId(improvementTile)] += 1;
-  return state.hand.reduce((indices, id, index) => {
-    if (id === null) return indices;
+  state.hand.forEach((id, index) => {
+    if (id === null) return;
     const afterDiscard = [...afterDraw];
     afterDiscard[canonicalId(id)] -= 1;
-    if (winningTilesForCounts(afterDiscard).length > 0) indices.push(index);
-    return indices;
-  }, []);
+    const waits = winningTilesForCounts(afterDiscard);
+    if (waits.length === 0) return;
+    const hypotheticalHand = state.hand.map((tileId, tileIndex) => (tileIndex === index ? improvementTile : tileId));
+    const assessment = withHypotheticalHand(hypotheticalHand, () => {
+      const yakuman = waits.some((wait) => interpretations(wait).some((hand) => yakumanFor(hand, state.winType, completeTiles(wait)).length > 0));
+      if (yakuman) return { color: "gold", category: "役満聴牌" };
+      if (waits.length >= 3) return { color: "red", category: "多面張" };
+      if (waits.length === 2) return { color: "yellow", category: "両面・シャンポン" };
+      const shapes = interpretations(waits[0]).map((hand) => hand.wait).filter(Boolean);
+      if (shapes.includes("ryanmen") || shapes.includes("shanpon")) return { color: "yellow", category: "両面・シャンポン" };
+      return { color: "blue", category: "単騎・カンチャン・ペンチャン" };
+    });
+    guide.set(index, { ...assessment, waits });
+  });
+  return guide;
 }
 
 function applyImprovementDiscard(index) {
   if (state.improvementTile === null) return;
-  const validDiscards = discardIndicesForImprovement(state.improvementTile);
-  if (!validDiscards.includes(index)) return;
+  const guide = discardGuideForImprovement(state.improvementTile);
+  if (!guide.has(index)) return;
   state.hand[index] = state.improvementTile;
   state.winningTile = null;
   clearImprovementGuide();
@@ -519,7 +592,7 @@ function findMeldArrangements(counts, needed, groups = [], results = []) {
 
 function openGroups() {
   return state.melds.map((meld) => {
-    if (meld.type === "chi") return { type: "sequence", tile: meld.tiles[0], open: true, concealed: false };
+    if (meld.type === "chi") return { type: "sequence", tile: Math.min(...meld.tiles.map(canonicalId)), open: true, concealed: false };
     if (meld.type === "pon") return { type: "triplet", tile: meld.tiles[0], open: true, concealed: false };
     return { type: "kan", tile: meld.tiles[0], open: meld.type === "minkan", concealed: meld.type === "ankan" };
   });
@@ -788,32 +861,35 @@ function renderHand() {
   const container = document.getElementById("handSlots");
   container.innerHTML = "";
   const target = targetConcealedCount();
-  const improvingDiscards = discardIndicesForImprovement(state.improvementTile);
+  const improvementGuide = discardGuideForImprovement(state.improvementTile);
   state.hand.forEach((id, index) => {
     const slot = document.createElement("button");
     slot.type = "button";
-    slot.className = `hand-slot ${state.selectedSlot === index ? "selected" : ""} ${improvingDiscards.includes(index) ? "discard-highlight" : ""}`;
+    const guidance = improvementGuide.get(index);
+    slot.className = `hand-slot ${state.selectedSlot === index ? "selected" : ""} ${guidance ? `discard-highlight discard-${guidance.color}` : ""}`;
     slot.disabled = index >= target;
     slot.innerHTML = id === null ? "" : renderTile(id);
     slot.setAttribute(
       "aria-label",
       id === null
         ? `${index + 1}番目の手牌を選択`
-        : improvingDiscards.includes(index)
-          ? `${tileById(id).label}を捨てて聴牌`
+        : guidance
+          ? `${tileById(id).label}を捨てて聴牌 (${guidance.category})`
           : `${tileById(id).label}を手牌から外す`,
     );
     slot.addEventListener("click", () => {
-      if (id !== null && improvingDiscards.includes(index)) {
-        applyImprovementDiscard(index);
-        render();
+      if (id !== null && guidance) {
+        recordedChange(() => applyImprovementDiscard(index));
         return;
       }
       if (id !== null) {
-        state.hand[index] = null;
-        state.winningTile = null;
-        clearImprovementGuide();
-        sortHand();
+        recordedChange(() => {
+          state.hand[index] = null;
+          state.winningTile = null;
+          clearImprovementGuide();
+          sortHand();
+        });
+        return;
       } else {
         state.selectedSlot = state.selectedSlot === index ? null : index;
       }
@@ -858,13 +934,21 @@ function renderModes() {
   });
   const hints = {
     hand: "牌を押すと手牌に入ります",
-    dora: "牌を押すとドラになります",
-    chi: "数牌1〜7を押すと順子を副露",
+    chi: "鳴く牌を押すと手牌の2枚でチー",
     pon: "牌を押すと刻子を副露",
     ankan: "牌を押すと暗槓を副露",
     minkan: "牌を押すと明槓を副露",
+    kakan: "ポンした牌を押すと加カン",
+    dora: "牌を押すとドラになります",
   };
   document.getElementById("modeHint").textContent = hints[state.mode];
+  const doraModeButton = document.getElementById("doraModeButton");
+  doraModeButton.className = state.mode === "dora" ? "active" : "";
+  doraModeButton.onclick = () => {
+    state.mode = "dora";
+    state.selectedSlot = null;
+    render();
+  };
 }
 
 function renderDora() {
@@ -880,8 +964,7 @@ function renderDora() {
     item.className = "dora-item";
     item.innerHTML = `${renderTile(id)}<button type="button" aria-label="ドラを削除">×</button>`;
     item.querySelector("button").addEventListener("click", () => {
-      state.dora.splice(index, 1);
-      render();
+      recordedChange(() => state.dora.splice(index, 1));
     });
     box.appendChild(item);
   });
@@ -901,8 +984,7 @@ function renderMelds() {
       <div class="meld-tiles">${meld.tiles.map((id) => renderTile(id)).join("")}</div>
     `;
     item.querySelector("button").addEventListener("click", () => {
-      state.melds.splice(index, 1);
-      render();
+      recordedChange(() => state.melds.splice(index, 1));
     });
     area.appendChild(item);
   });
@@ -944,8 +1026,9 @@ function renderWaits() {
       button.setAttribute("aria-label", `${tileById(id).label}で聴牌へ進む`);
       button.innerHTML = renderTile(id);
       button.addEventListener("click", () => {
-        state.improvementTile = id;
-        render();
+        recordedChange(() => {
+          state.improvementTile = id;
+        });
       });
       container.appendChild(button);
     });
@@ -961,8 +1044,9 @@ function renderWaits() {
     button.setAttribute("aria-label", `${tileById(id).label}でアガリ`);
     button.innerHTML = renderTile(id);
     button.addEventListener("click", () => {
-      state.winningTile = id;
-      render();
+      recordedChange(() => {
+        state.winningTile = id;
+      });
     });
     container.appendChild(button);
   });
@@ -980,9 +1064,10 @@ function renderWinTypeButtons() {
     button.className = state.winType === option.id ? "active" : "";
     button.textContent = option.label;
     button.addEventListener("click", () => {
-      state.winType = option.id;
-      normalizeSituation();
-      render();
+      recordedChange(() => {
+        state.winType = option.id;
+        normalizeSituation();
+      });
     });
     container.appendChild(button);
   });
@@ -1026,16 +1111,17 @@ function renderSituationButtons() {
     button.className = state.situation[option.id] ? "active" : "";
     button.disabled = situationDisabled(option.id);
     button.addEventListener("click", () => {
-      const next = !state.situation[option.id];
-      if (option.id === "riichi" && next) state.situation.doubleRiichi = false;
-      if (option.id === "doubleRiichi" && next) state.situation.riichi = false;
-      if (option.id === "haitei" && next) state.situation.rinshan = false;
-      if (option.id === "rinshan" && next) state.situation.haitei = false;
-      if (option.id === "houtei" && next) state.situation.chankan = false;
-      if (option.id === "chankan" && next) state.situation.houtei = false;
-      state.situation[option.id] = next;
-      normalizeSituation();
-      render();
+      recordedChange(() => {
+        const next = !state.situation[option.id];
+        if (option.id === "riichi" && next) state.situation.doubleRiichi = false;
+        if (option.id === "doubleRiichi" && next) state.situation.riichi = false;
+        if (option.id === "haitei" && next) state.situation.rinshan = false;
+        if (option.id === "rinshan" && next) state.situation.haitei = false;
+        if (option.id === "houtei" && next) state.situation.chankan = false;
+        if (option.id === "chankan" && next) state.situation.houtei = false;
+        state.situation[option.id] = next;
+        normalizeSituation();
+      });
     });
     container.appendChild(button);
   });
@@ -1052,8 +1138,9 @@ function renderHanAdjustmentButtons() {
   container.querySelectorAll("button").forEach((button) => {
     button.addEventListener("click", () => {
       const delta = Number(button.dataset.delta);
-      state.hanAdjustment = Math.max(-20, Math.min(20, state.hanAdjustment + delta));
-      render();
+      recordedChange(() => {
+        state.hanAdjustment = Math.max(-20, Math.min(20, state.hanAdjustment + delta));
+      });
     });
   });
 }
@@ -1100,6 +1187,7 @@ function render() {
   renderSituationButtons();
   renderHanAdjustmentButtons();
   renderResult();
+  document.getElementById("undoButton").disabled = history.length === 0;
 }
 
 function init() {
@@ -1111,22 +1199,24 @@ function init() {
     "0",
   );
   ["roundWind", "seatWind", "honba"].forEach((id) => {
-    document.getElementById(id).addEventListener("change", render);
+    document.getElementById(id).addEventListener("change", () => recordedChange(() => {}));
   });
+  document.getElementById("undoButton").addEventListener("click", undoLastAction);
   document.getElementById("resetButton").addEventListener("click", () => {
-    state.hand = Array(13).fill(null);
-    state.selectedSlot = null;
-    state.mode = "hand";
-    state.dora = [];
-    state.melds = [];
-    state.winningTile = null;
-    state.improvementTile = null;
-    state.winType = "ron";
-    state.hanAdjustment = 0;
-    Object.keys(state.situation).forEach((key) => {
-      state.situation[key] = false;
+    recordedChange(() => {
+      state.hand = Array(13).fill(null);
+      state.selectedSlot = null;
+      state.mode = "hand";
+      state.dora = [];
+      state.melds = [];
+      state.winningTile = null;
+      state.improvementTile = null;
+      state.winType = "ron";
+      state.hanAdjustment = 0;
+      Object.keys(state.situation).forEach((key) => {
+        state.situation[key] = false;
+      });
     });
-    render();
   });
   render();
 }
