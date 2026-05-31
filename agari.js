@@ -550,7 +550,7 @@ function discardGuideForImprovement(improvementTile) {
     if (waits.length === 0) return;
     const hypotheticalHand = state.hand.map((tileId, tileIndex) => (tileIndex === index ? improvementTile : tileId));
     const assessment = withHypotheticalHand(hypotheticalHand, () => {
-      const yakuman = waits.some((wait) => interpretations(wait).some((hand) => yakumanFor(hand, state.winType, completeTiles(wait)).length > 0));
+      const yakuman = waits.some((wait) => interpretations(wait).some((hand) => yakumanFor(hand, state.winType, completeTiles(wait), wait).length > 0));
       if (yakuman) return { color: "gold", category: "役満聴牌" };
       if (waits.length >= 3) return { color: "red", category: "多面張" };
       if (waits.length === 2) return { color: "yellow", category: "両面・シャンポン" };
@@ -693,6 +693,25 @@ function tripletGroups(groups) {
   return groups.filter((group) => group.type === "triplet" || group.type === "kan");
 }
 
+function nineGatesName(tileList, winningTile) {
+  if (!isClosedHand() || state.melds.length > 0 || tileList.length !== 14) return null;
+  if (tileList.some(isHonor)) return null;
+  const suits = new Set(tileList.map((id) => ruleTile(id).suit));
+  if (suits.size !== 1) return null;
+
+  const counts = Array(9).fill(0);
+  tileList.forEach((id) => {
+    counts[ruleTile(id).rank - 1] += 1;
+  });
+  const base = [3, 1, 1, 1, 1, 1, 1, 1, 3];
+  if (!base.every((required, index) => counts[index] >= required)) return null;
+  if (counts.reduce((extra, count, index) => extra + count - base[index], 0) !== 1) return null;
+
+  const beforeWin = [...counts];
+  beforeWin[ruleTile(winningTile).rank - 1] -= 1;
+  return beforeWin.every((count, index) => count === base[index]) ? "純正九蓮宝燈" : "九蓮宝燈";
+}
+
 function hasSequenceAcrossSuits(groups) {
   const sequences = groups.filter((group) => group.type === "sequence" && group.tile < 27);
   for (let start = 1; start <= 7; start += 1) {
@@ -757,8 +776,10 @@ function standardYaku(hand, winningTile, winType, tileList) {
   return yaku;
 }
 
-function yakumanFor(hand, winType, tileList) {
+function yakumanFor(hand, winType, tileList, winningTile) {
   if (hand.kind === "kokushi") return ["国士無双"];
+  const nineGates = nineGatesName(tileList, winningTile);
+  if (nineGates) return [nineGates];
   if (tileList.every(isHonor)) return ["字一色"];
   if (tileList.every(isTerminal)) return ["清老頭"];
   if (hand.kind !== "standard") return [];
@@ -774,7 +795,7 @@ function yakumanFor(hand, winType, tileList) {
 
 function yakuFor(hand, winningTile, winType) {
   const tileList = completeTiles(winningTile);
-  const yakuman = yakumanFor(hand, winType, tileList);
+  const yakuman = yakumanFor(hand, winType, tileList, winningTile);
   if (yakuman.length > 0) return { yaku: yakuman.map((name) => ({ name, han: 13 })), yakuman: true };
   let yaku = [];
   if (hand.kind === "chiitoi") {

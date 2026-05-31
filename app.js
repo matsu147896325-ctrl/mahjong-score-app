@@ -1,234 +1,314 @@
-const data = window.APP_DATA || { items: [], source: "" };
-const queryInput = document.querySelector("#query");
-const resultsEl = document.querySelector("#results");
-const emptyEl = document.querySelector("#empty");
-const resultCountEl = document.querySelector("#result-count");
-const sourceNameEl = document.querySelector("#source-name");
-const explanationEl = document.querySelector("#explanation");
-const template = document.querySelector("#result-template");
-const filters = [...document.querySelectorAll(".filter")];
+const styleOptions = [
+  { id: "menzen", label: "面前" },
+  { id: "open", label: "鳴き" },
+  { id: "chiitoi", label: "七対子" },
+  { id: "pinfu", label: "平和" },
+];
 
-let activeFilter = "all";
-let selectedId = null;
-sourceNameEl.textContent = data.source;
-data.items.forEach((item, index) => {
-  item.viewId = String(index);
-});
-queryInput.value = new URLSearchParams(window.location.search).get("q") || "";
+const melds = [
+  { id: "anko", label: "暗刻", simpleFu: 4, terminalFu: 8 },
+  { id: "minko", label: "明刻", simpleFu: 2, terminalFu: 4 },
+  { id: "ankan", label: "暗槓", simpleFu: 16, terminalFu: 32 },
+  { id: "minkan", label: "明槓", simpleFu: 8, terminalFu: 16 },
+];
 
-const normalize = (value) =>
-  (value || "")
-    .toString()
-    .toLowerCase()
-    .replace(/[０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
-    .replace(/\s+/g, " ")
-    .trim();
+const headOptions = [
+  { id: "normal", label: "通常", fu: 0 },
+  { id: "value", label: "役牌", fu: 2 },
+];
 
-const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const escapeHtml = (value) =>
-  (value || "")
-    .toString()
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+const waitOptions = [
+  { id: "ryanmen", label: "両面", fu: 0 },
+  { id: "kanchan", label: "嵌張", fu: 2 },
+  { id: "penchan", label: "辺張", fu: 2 },
+  { id: "shanpon", label: "双碰", fu: 0 },
+  { id: "tanki", label: "単騎", fu: 2 },
+  { id: "other", label: "他", fu: 0 },
+];
 
-const highlight = (text, terms) => {
-  let output = escapeHtml(text);
-  for (const term of terms) {
-    if (!term) continue;
-    output = output.replace(new RegExp(`(${escapeRegExp(term)})`, "gi"), "<mark>$1</mark>");
-  }
-  return output;
+const state = {
+  style: "menzen",
+  head: "normal",
+  wait: "ryanmen",
+  han: 1,
+  honba: 0,
+  counts: Object.fromEntries(melds.map((meld) => [meld.id, { simple: 0, terminal: 0 }])),
 };
 
-const hasFilter = (item) => {
-  const refs = item.references || [];
-  if (activeFilter === "law") return refs.some((ref) => /法第|生活保護法|福祉法|施行規則|法律|告示|別表/.test(ref));
-  if (activeFilter === "notice") return refs.some((ref) => /通知|社発/.test(ref));
-  if (activeFilter === "qa") return refs.some((ref) => /問答/.test(ref));
-  return true;
-};
+const yen = new Intl.NumberFormat("ja-JP");
 
-const scoreItem = (item, terms) => {
-  const title = normalize(item.title);
-  const chapter = normalize(item.chapter);
-  const refs = normalize((item.references || []).join(" "));
-  const body = normalize(item.body);
-  let score = 0;
-  for (const term of terms) {
-    if (title.includes(term)) score += 16;
-    if (refs.includes(term)) score += 12;
-    if (chapter.includes(term)) score += 6;
-    if (body.includes(term)) score += 2;
-  }
-  return score;
-};
+function createChoiceButton(option, groupName, isActive, onClick, extraClass = "") {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `choice ${extraClass}`.trim();
+  button.textContent = option.label;
+  button.setAttribute("aria-pressed", String(isActive));
+  button.dataset.group = groupName;
+  button.dataset.value = option.id;
+  button.setAttribute("data-testid", `${groupName}-${option.id}`);
+  button.addEventListener("click", onClick);
+  return button;
+}
 
-const makeSnippet = (item, rawTerms) => {
-  const body = item.body || "";
-  const normalizedBody = normalize(body);
-  const normalizedTerms = rawTerms.map(normalize);
-  let index = -1;
-  for (const term of normalizedTerms) {
-    index = normalizedBody.indexOf(term);
-    if (index >= 0) break;
-  }
-  const start = Math.max(0, index - 80);
-  const snippet = body.slice(start, start + 240);
-  return `${start > 0 ? "…" : ""}${snippet}${start + 240 < body.length ? "…" : ""}`;
-};
-
-const refClass = (ref) => (/法第|生活保護法|福祉法|施行規則|法律|告示|別表/.test(ref) ? "law" : "");
-const displayRef = (ref) => {
-  let output = normalizeSpaces(ref).replace(/－ \(/g, "－(");
-  if (/\([^)]$/.test(output) || /\([^)]+$/.test(output)) {
-    output = `${output})`;
-  }
-  return output;
-};
-
-const plainText = (value) => normalizeSpaces((value || "").replace(/[「」『』]/g, ""));
-
-const normalizeSpaces = (value) => value.toString().replace(/\s+/g, " ").trim();
-
-const readableSentence = (sentence) => {
-  const cleaned = plainText(sentence);
-  return cleaned.length > 120 ? `${cleaned.slice(0, 118)}…` : cleaned;
-};
-
-const splitSentences = (body) =>
-  body
-    .replace(/\n/g, "")
-    .split("。")
-    .map(readableSentence)
-    .filter(
-      (sentence) =>
-        sentence.length > 18 &&
-        !/^(問|答|なお、?設問|根拠|参考|参照)/.test(sentence) &&
-        !/(どうなるか|よいか|示されたい|説明されたい|取り扱うのか|するのか|すべきか|なるのか|できるか|あるか)$/.test(sentence),
-    )
-    .slice(0, 14);
-
-const sentenceScore = (sentence, index) => {
-  let score = Math.max(0, 8 - index);
-  if (/である|となる|必要|要する|認め|扱|判断|留意|注意|支給|認定|適用/.test(sentence)) score += 8;
-  if (/どうなるか|よいか|されたいか|この場合/.test(sentence)) score -= 8;
-  if (/^\s*（/.test(sentence)) score -= 3;
-  return score;
-};
-
-const makeSummary = (item) => {
-  const sentences = splitSentences(item.body || "");
-  const refs = item.references?.length ? item.references : [];
-  const selected = sentences
-    .map((sentence, index) => ({ sentence, index, score: sentenceScore(sentence, index) }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3)
-    .sort((a, b) => a.index - b.index)
-    .map(({ sentence }) => sentence);
-  const summary = selected.length
-    ? `${selected.join("。")}。`
-    : "本文から要約できる十分な文章を抽出できませんでした。本文を確認してください。";
-  return {
-    summary,
-    refs,
-    note: "要約は本文から自動作成しています。最終判断では、下の本文と根拠法令・通知を確認してください。",
-  };
-};
-
-const renderExplanation = (item) => {
-  const summary = makeSummary(item);
-  explanationEl.innerHTML = `
-    <p class="eyebrow">${escapeHtml(item.chapter || "章未分類")}</p>
-    <h2>${escapeHtml(item.title)}</h2>
-    <div class="explain-group">
-      <h3>本文要約</h3>
-      <p class="explain-text">${escapeHtml(summary.summary)}</p>
-    </div>
-    <div class="explain-group">
-      <h3>根拠法令・通知</h3>
-      <div class="refs">
-        ${
-          summary.refs.length
-            ? summary.refs
-                .map((ref) => `<span class="ref ${refClass(ref)}">${escapeHtml(displayRef(ref))}</span>`)
-                .join("")
-            : '<span class="ref">本文中に明示なし</span>'
-        }
-      </div>
-    </div>
-    <div class="explain-group">
-      <h3>本文</h3>
-      <p class="explain-body">${escapeHtml(item.body)}</p>
-      <p class="explain-text">${escapeHtml(summary.note)}</p>
-    </div>
-  `;
-};
-
-const render = () => {
-  const rawQuery = queryInput.value.trim();
-  const rawTerms = rawQuery.split(/[ 　]+/).filter(Boolean);
-  const terms = rawTerms.map(normalize);
-  const matches = rawQuery
-    ? data.items
-        .map((item) => ({ item, score: scoreItem(item, terms) }))
-        .filter(({ item, score }) => score > 0 && hasFilter(item))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 80)
-    : [];
-
-  resultCountEl.textContent = `${matches.length}件`;
-  resultsEl.replaceChildren();
-  emptyEl.hidden = matches.length > 0 || rawQuery;
-  if (matches.length === 0 && rawQuery) {
-    emptyEl.hidden = false;
-    emptyEl.querySelector("h2").textContent = "該当する候補がありません";
-    emptyEl.querySelector("p").textContent = "別の表記や短い単語で検索してみてください。";
-  } else if (!rawQuery) {
-    emptyEl.querySelector("h2").textContent = "関連ワードを入力してください";
-    emptyEl.querySelector("p").textContent = "問のタイトル、本文、根拠候補をまとめて検索します。";
-  }
-
-  for (const { item } of matches) {
-    const node = template.content.cloneNode(true);
-    const card = node.querySelector(".result-card");
-    card.dataset.id = item.viewId;
-    if (item.viewId === selectedId) {
-      card.classList.add("selected");
-    }
-    node.querySelector(".chapter").textContent = item.chapter || "章未分類";
-    node.querySelector("h2").innerHTML = highlight(item.title, rawTerms);
-    node.querySelector(".snippet").innerHTML = highlight(makeSnippet(item, rawTerms), rawTerms);
-    node.querySelector(".body").innerHTML = highlight(item.body, rawTerms);
-    const refsEl = node.querySelector(".refs");
-    const refs = item.references?.length ? item.references : ["本文中に明示なし"];
-    refs.forEach((ref) => {
-      const chip = document.createElement("span");
-      chip.className = `ref ${refClass(ref)}`;
-      chip.textContent = displayRef(ref);
-      refsEl.append(chip);
-    });
-    node.querySelector(".explain-button").addEventListener("click", () => {
-      selectedId = item.viewId;
-      renderExplanation(item);
-      document.querySelectorAll(".result-card").forEach((cardEl) => {
-        cardEl.classList.toggle("selected", cardEl.dataset.id === selectedId);
-      });
-    });
-    resultsEl.append(node);
-  }
-};
-
-queryInput.addEventListener("input", render);
-filters.forEach((button) => {
-  button.addEventListener("click", () => {
-    filters.forEach((item) => item.classList.remove("active"));
-    button.classList.add("active");
-    activeFilter = button.dataset.filter;
-    render();
+function renderChoiceGroup(containerId, options, groupName, currentValue, onSelect) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = "";
+  options.forEach((option) => {
+    container.appendChild(
+      createChoiceButton(option, groupName, option.id === currentValue, () => {
+        onSelect(option.id);
+        update();
+      }),
+    );
   });
-});
+}
 
-render();
+function renderMeldTable() {
+  const table = document.getElementById("meldTable");
+  table.innerHTML = "";
+
+  melds.forEach((meld) => {
+    const row = document.createElement("div");
+    row.className = "meld-row";
+
+    const name = document.createElement("div");
+    name.className = "meld-name";
+    name.textContent = meld.label;
+    row.appendChild(name);
+
+    row.appendChild(createTileGroup(meld, "simple", "2〜8牌", meld.simpleFu));
+    row.appendChild(createTileGroup(meld, "terminal", "一九字牌", meld.terminalFu));
+
+    const total = document.createElement("div");
+    total.className = "meld-total";
+    total.id = `${meld.id}Total`;
+    total.textContent = "0符";
+    row.appendChild(total);
+
+    table.appendChild(row);
+  });
+}
+
+function createTileGroup(meld, type, label, fuPerSet) {
+  const group = document.createElement("div");
+  group.className = "tile-group";
+
+  const heading = document.createElement("div");
+  heading.className = "tile-label";
+  heading.innerHTML = `<span>${label}</span><span>${fuPerSet}符/個</span>`;
+  group.appendChild(heading);
+
+  const buttons = document.createElement("div");
+  buttons.className = "count-buttons";
+
+  for (let count = 0; count <= 4; count += 1) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "count-btn";
+    button.textContent = count;
+    button.setAttribute("data-testid", `${meld.id}-${type}-${count}`);
+    button.setAttribute("aria-pressed", String(state.counts[meld.id][type] === count));
+    button.addEventListener("click", () => {
+      state.counts[meld.id][type] = count;
+      update();
+    });
+    buttons.appendChild(button);
+  }
+
+  group.appendChild(buttons);
+  return group;
+}
+
+function renderHanGroup() {
+  const container = document.getElementById("hanGroup");
+  container.innerHTML = "";
+  for (let han = 1; han <= 13; han += 1) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `han-btn ${han === 13 ? "yakuman" : ""}`;
+    button.textContent = han === 13 ? "13 役満" : `${han}`;
+    button.setAttribute("data-testid", `han-${han}`);
+    button.setAttribute("aria-pressed", String(state.han === han));
+    button.addEventListener("click", () => {
+      state.han = han;
+      update();
+    });
+    container.appendChild(button);
+  }
+}
+
+function renderHonbaSelect() {
+  const select = document.getElementById("honba");
+  for (let i = 0; i <= 10; i += 1) {
+    const option = document.createElement("option");
+    option.value = String(i);
+    option.textContent = `${i}本場`;
+    select.appendChild(option);
+  }
+  select.addEventListener("change", (event) => {
+    state.honba = Number(event.target.value);
+    update();
+  });
+}
+
+function roundUp100(value) {
+  return Math.ceil(value / 100) * 100;
+}
+
+function roundFu(value) {
+  return Math.ceil(value / 10) * 10;
+}
+
+function getSelected(options, id) {
+  return options.find((option) => option.id === id);
+}
+
+function resetMeldCounts() {
+  melds.forEach((meld) => {
+    state.counts[meld.id].simple = 0;
+    state.counts[meld.id].terminal = 0;
+  });
+}
+
+function applyStyleDefaults(styleId) {
+  if (styleId === "chiitoi") {
+    resetMeldCounts();
+    state.head = "normal";
+    state.wait = "tanki";
+    return;
+  }
+
+  if (styleId === "pinfu") {
+    resetMeldCounts();
+    state.wait = "ryanmen";
+  }
+}
+
+function calcMeldFu(meld) {
+  const counts = state.counts[meld.id];
+  return counts.simple * meld.simpleFu + counts.terminal * meld.terminalFu;
+}
+
+function calcFu(winType) {
+  const style = getSelected(styleOptions, state.style);
+  if (style.id === "chiitoi") return 25;
+  if (style.id === "pinfu") return winType === "ron" ? 30 : 20;
+
+  const meldFu = melds.reduce((total, meld) => total + calcMeldFu(meld), 0);
+  const headFu = getSelected(headOptions, state.head).fu;
+  const waitFu = getSelected(waitOptions, state.wait).fu;
+  const menzenRonFu = winType === "ron" && style.id === "menzen" ? 10 : 0;
+  const tsumoFu = winType === "tsumo" ? 2 : 0;
+  const rawFu = 20 + meldFu + headFu + waitFu + menzenRonFu + tsumoFu;
+  const fu = Math.max(20, roundFu(rawFu));
+  return winType === "ron" && style.id === "open" && fu === 20 ? 30 : fu;
+}
+
+function getLimit(fu, han) {
+  if (han >= 13) return { name: "役満", base: 8000 };
+  if (han >= 11) return { name: "三倍満", base: 6000 };
+  if (han >= 8) return { name: "倍満", base: 4000 };
+  if (han >= 6) return { name: "跳満", base: 3000 };
+  if (han >= 5 || (han === 4 && fu >= 40) || (han === 3 && fu >= 70)) {
+    return { name: "満貫", base: 2000 };
+  }
+  return { name: "通常", base: fu * 2 ** (han + 2) };
+}
+
+function calcRonScore(fu, han, honba) {
+  if (fu === 20 || (fu === 25 && han === 1)) {
+    return { limitName: "表なし", parent: null, child: null };
+  }
+
+  const limit = getLimit(fu, han);
+  return {
+    limitName: limit.name,
+    parent: roundUp100(limit.base * 6) + honba * 300,
+    child: roundUp100(limit.base * 4) + honba * 300,
+  };
+}
+
+function calcTsumoScore(fu, han, honba) {
+  if ((fu === 20 || fu === 25) && han === 1) {
+    return {
+      limitName: "表なし",
+      parent: null,
+      childFromParent: null,
+      childFromChild: null,
+    };
+  }
+
+  const limit = getLimit(fu, han);
+  return {
+    limitName: limit.name,
+    parent: roundUp100(limit.base * 2) + honba * 100,
+    childFromParent: roundUp100(limit.base * 2) + honba * 100,
+    childFromChild: roundUp100(limit.base) + honba * 100,
+  };
+}
+
+function setText(id, text) {
+  document.getElementById(id).textContent = text;
+}
+
+function scoreText(value) {
+  return value === null ? "-" : yen.format(value);
+}
+
+function updateButtons() {
+  document.querySelectorAll("[data-group='style']").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.value === state.style));
+  });
+  document.querySelectorAll("[data-group='head']").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.value === state.head));
+  });
+  document.querySelectorAll("[data-group='wait']").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.value === state.wait));
+  });
+  renderMeldTable();
+  renderHanGroup();
+}
+
+function update() {
+  updateButtons();
+  melds.forEach((meld) => setText(`${meld.id}Total`, `${calcMeldFu(meld)}符`));
+
+  const ronFu = calcFu("ron");
+  const tsumoFu = calcFu("tsumo");
+  const ronScores = calcRonScore(ronFu, state.han, state.honba);
+  const tsumoScores = calcTsumoScore(tsumoFu, state.han, state.honba);
+  const hanText = state.han === 13 ? "13翻" : `${state.han}翻`;
+
+  setText("ronFuText", `${ronFu}符`);
+  setText("ronHanText", hanText);
+  setText("tsumoFuText", `${tsumoFu}符`);
+  setText("tsumoHanText", hanText);
+  setText("ronParent", scoreText(ronScores.parent));
+  setText("ronChild", scoreText(ronScores.child));
+  setText("tsumoParent", scoreText(tsumoScores.parent));
+  setText("tsumoChildFromParent", scoreText(tsumoScores.childFromParent));
+  setText("tsumoChildFromChild", scoreText(tsumoScores.childFromChild));
+}
+
+function init() {
+  renderChoiceGroup("styleGroup", styleOptions, "style", state.style, (id) => {
+    state.style = id;
+    applyStyleDefaults(id);
+  });
+  renderChoiceGroup("headGroup", headOptions, "head", state.head, (id) => {
+    state.head = id;
+  });
+  renderChoiceGroup("waitGroup", waitOptions, "wait", state.wait, (id) => {
+    state.wait = id;
+  });
+  renderHonbaSelect();
+  renderMeldTable();
+  renderHanGroup();
+  update();
+}
+
+init();
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./service-worker.js").catch(() => {});
+}

@@ -1,4 +1,4 @@
-const CACHE_NAME = "mahjong-score-v28";
+const CACHE_NAME = "mahjong-score-v30";
 const ASSETS = [
   "./",
   "./index.html",
@@ -6,9 +6,11 @@ const ASSETS = [
   "./app.js?v=10",
   "./agari.html",
   "./agari.css?v=20",
-  "./agari.js?v=21",
+  "./agari.js?v=22",
   "./manifest.webmanifest",
   "./icon.svg",
+  "./robots.txt",
+  "./sitemap.xml",
 ];
 
 self.addEventListener("install", (event) => {

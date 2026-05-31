@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://whitedogk.github.io/mahjong-score-app/sitemap.xml
